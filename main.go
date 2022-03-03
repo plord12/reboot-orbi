@@ -21,12 +21,22 @@ func main() {
 	password := flag.String("password", "admin", "Router password")
 	flag.Parse()
 
-	reboot(hostname, username, password)
+	// try a few times - router seems to often fail the first time
+	//
+	for i := 1; i < 4; i++ {
+		log.Println("Attempt", i)
+		if reboot(hostname, username, password) {
+			break
+		}
+	}
+
 }
 
 // Send reboot command to orbi router
 //
-func reboot(hostname *string, username *string, password *string) {
+// returns true on success
+//
+func reboot(hostname *string, username *string, password *string) bool {
 
 	// Create HTTP client with timeout
 	//
@@ -40,12 +50,14 @@ func reboot(hostname *string, username *string, password *string) {
 	log.Println("GET", httpurl)
 	request, err := http.NewRequest(http.MethodGet, httpurl, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return false
 	}
 	request.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(*username+":"+*password)))
 	response, err := client.Do(request)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return false
 	}
 	defer response.Body.Close()
 
@@ -55,7 +67,8 @@ func reboot(hostname *string, username *string, password *string) {
 	//
 	doc, err := goquery.NewDocumentFromReader(response.Body)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return false
 	}
 	val, exists := doc.Find("form").First().Attr("action")
 	if exists {
@@ -69,19 +82,27 @@ func reboot(hostname *string, username *string, password *string) {
 
 		request, err := http.NewRequest(http.MethodPost, httpurl, strings.NewReader(data.Encode()))
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			return false
 		}
 		request.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(*username+":"+*password)))
 		request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 		response, err := client.Do(request)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			return false
 		}
 		log.Println(response.Status)
-
 		defer response.Body.Close()
+
+		if response.StatusCode >= 200 && response.StatusCode <= 299 {
+			return true
+		} else {
+			return false
+		}
 	} else {
-		log.Fatal("POST Form not found")
+		log.Println("POST Form not found")
+		return false
 	}
 
 }
